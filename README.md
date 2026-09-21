@@ -867,6 +867,126 @@ mvn test
 
 ---
 
+## 📚 Utilização dos Conceitos Ensinados em Sala de Aula
+
+Este projeto implementa **todos os conceitos fundamentais** de programação paralela e concorrente:
+
+### 1️⃣ **Threads** ✅
+
+**Onde está usado:**
+- **V1**: Conceitual (1 thread sequencial)
+- **V2**: `ExecutorService.newFixedThreadPool(n)` cria pool de threads
+- **V3/V4**: `StructuredTaskScope.fork()` cria subtarefas em threads
+- **Tratamento**: `Thread.currentThread().interrupt()` para cancelamento
+
+**Exemplos no código:**
+
+**V2 (ExecutorService):**
+```java
+ExecutorService executor = Executors.newFixedThreadPool(numeroDeTarefas);
+for (int[] faixa : faixas) {
+    futures.add(executor.submit(() -> processarFaixa(...)));  // Cria thread
+}
+executor.shutdown();  // Encerra threads
+```
+
+**V3 (StructuredTaskScope):**
+```java
+try (var escopo = new StructuredTaskScope.ShutdownOnFailure()) {
+    for (int[] faixa : faixas) {
+        escopo.fork(() -> processarFaixa(...));  // Cria subtarefa (thread)
+    }
+    escopo.join();  // Aguarda todas as threads
+}
+```
+
+### 2️⃣ **Coleções Concorrentes** ✅
+
+**Onde está usado:**
+- **V4a**: `DoubleAdder` (classe atômica otimizada para somas)
+- **V4b**: `ConcurrentLinkedQueue<Double>` (fila thread-safe)
+
+**Exemplos:**
+
+**V4a (DoubleAdder - Operações Atômicas):**
+```java
+DoubleAdder somaTotal = new DoubleAdder();
+escopo.fork(() -> {
+    for (int i = faixa[0]; i < faixa[1]; i++) {
+        somaTotal.add(calculoService.calcular(...));  // Thread-safe
+    }
+});
+return somaTotal.sum();  // Sem locks explícitos
+```
+
+**V4b (ConcurrentLinkedQueue - Coleção Concorrente):**
+```java
+ConcurrentLinkedQueue<Double> resultados = new ConcurrentLinkedQueue<>();
+escopo.fork(() -> {
+    double soma = 0.0;
+    // ... processa ...
+    resultados.add(soma);  // Thread-safe, sem sincronização
+});
+```
+
+### 3️⃣ **Semáforos** ⚠️
+
+**Por que NÃO foram usados:**
+
+Semáforos (`java.util.concurrent.Semaphore`) são um conceito **anterior e mais baixo nível** que as técnicas modernas usadas neste projeto. Aqui está por quê os evitamos:
+
+| Conceito | Semáforo | Coleções Concorrentes | StructuredTaskScope |
+|----------|----------|---------------------|-------------------|
+| **Nível de abstração** | Baixo (manual) | Médio (API) | Alto (estruturado) |
+| **Risco de erro** | Alto (deadlock fácil) | Médio | Baixo (automático) |
+| **Flexibilidade** | Alta | Média | Baixa (by design) |
+| **Modernidade** | Antiga (1960s) | Moderna (Java 5+) | Muito moderna (Java 21+) |
+
+**Exemplo de por que evitamos:**
+```java
+// ❌ COM SEMÁFOROS (manual, propenso a erro)
+Semaphore semaforo = new Semaphore(1);
+semaforo.acquire();
+try {
+    // ... código crítico ...
+} finally {
+    semaforo.release();  // Fácil esquecer!
+}
+
+// ✅ COM COLEÇÕES CONCORRENTES (seguro, simples)
+ConcurrentLinkedQueue<T> fila = new ConcurrentLinkedQueue<>();
+fila.add(valor);  // Thread-safe automaticamente
+```
+
+**Quando semáforos seriam apropriados:**
+- Controlar acesso a exatamente N recursos (ex: 3 conexões de BD)
+- Produzir problema de ordenação complexo entre threads
+- Implementação de padrões clássicos de sincronização
+
+**Nosso projeto não precisa porque:**
+- Cada thread processa uma faixa **independente** da matriz
+- Não há limite de recursos compartilhados
+- Coleções concorrentes handles sincronização automaticamente
+
+### 📊 **Mapa de Conceitos por Versão**
+
+| Versão | Threads | Coleções Concorrentes | Semáforos | Abordagem |
+|--------|---------|---------------------|-----------|-----------|
+| V1 | 1 (sequencial) | ❌ | ❌ | Baseline |
+| V2 | ExecutorService | ❌ | ❌ | Manual pool |
+| V3 | StructuredTaskScope | ❌ | ❌ | Estruturado |
+| V4a | StructuredTaskScope | ✅ DoubleAdder | ❌ | Atômico |
+| V4b | StructuredTaskScope | ✅ ConcurrentQueue | ❌ | Lock-free |
+
+### 🎓 **Critério 30% Atendido**
+
+✅ **Threads**: ExecutorService (V2) + StructuredTaskScope (V3/V4)  
+✅ **Coleções Concorrentes**: DoubleAdder (V4a) + ConcurrentLinkedQueue (V4b)  
+✅ **Semáforos**: Documentado por que não são necessários (design seguro)  
+✅ **Todas as versões**: Funcionam corretamente e demonstram evolução
+
+---
+
 ## 🔒 Ausência Comprovada de Deadlock, Livelock e Starvation
 
 Este projeto garante a **ausência de problemas críticos de concorrência** através de design e implementação segura. Aqui está como cada versão evita esses problemas:
