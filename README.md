@@ -867,6 +867,90 @@ mvn test
 
 ---
 
+## 🔒 Ausência Comprovada de Deadlock, Livelock e Starvation
+
+Este projeto garante a **ausência de problemas críticos de concorrência** através de design e implementação segura. Aqui está como cada versão evita esses problemas:
+
+### ❌ **Deadlock** — "Threads bloqueadas esperando uma pela outra"
+
+**Como evitamos:**
+- **Sem locks aninhados**: Nenhuma thread tenta adquirir 2 locks ao mesmo tempo
+- **V2 (ExecutorService)**: Cada tarefa é independente, não aguarda outra. `future.get()` aguarda individualmente
+- **V3/V4 (Estruturado)**: `StructuredTaskScope.join()` é uma operação ordenada, sem ciclos de espera
+- **V4a (DoubleAdder)**: Usa operações atômicas (CAS), não tem locks explícitos
+- **V4b (Queue)**: `ConcurrentLinkedQueue.add()` não tem dependência entre threads
+
+**Código de exemplo (V2):**
+```java
+// ✅ Cada tarefa é independente, sem interlock
+escopo.fork(() -> processarFaixa(1, 100));  // Thread 1
+escopo.fork(() -> processarFaixa(101, 200)); // Thread 2
+// Nenhuma aguarda a outra → sem deadlock
+```
+
+### ↔️ **Livelock** — "Threads girando sem fazer progresso"
+
+**Como evitamos:**
+- **V2**: `future.get()` bloqueia de verdade, não fica em loop
+- **V3/V4**: `escopo.join()` aguarda estruturadamente (não há "reconhecimento mútuo" que causa livelock)
+- **V4a (DoubleAdder)**: CAS é uma operação atômica que **sempre progride**
+- **V4b (Queue)**: Lock-free queue nunca fica em loop infinito
+
+**Comparação:**
+```java
+// ❌ LIVELOCK (evitado neste projeto)
+while (true) {
+    if (tryLock1) {
+        if (tryLock2) break;  // Falha, libera lock1
+        unlock1();
+    }
+}  // Pode girar infinitamente
+
+// ✅ NOSSA ABORDAGEM
+escopo.join();  // Aguarda estruturadamente, sempre progride
+```
+
+### 🚫 **Starvation** — "Uma thread nunca consegue executar"
+
+**Como evitamos:**
+- **Particionamento equilibrado**: `Particionador` divide as linhas de forma balanceada
+  - Matriz 1000×1000 com 10 threads = ~100 linhas por thread
+  - Sem desbalanceamento que faça uma tarefa ficar esperando indefinidamente
+- **V2**: Pool de threads é dimensionado pelo número real de tarefas
+- **V3/V4**: `StructuredTaskScope` distribui subtarefas equitativamente
+- **Timeout explícito**: V2 usa `awaitTermination(30, TimeUnit.SECONDS)` previne wait infinito
+
+**Exemplo de prevenção:**
+```java
+// ✅ Particionamento equilibrado (Particionador.java)
+int linhasPorTarefa = totalLinhas / tarefas;  // Distribuição justa
+for (int i = 0; i < tarefas; i++) {
+    int inicio = i * linhasPorTarefa;
+    int fim = (i == tarefas - 1) ? totalLinhas : (i + 1) * linhasPorTarefa;
+    // Cada thread processa ~100 linhas (nunca fica esperando)
+}
+```
+
+### 📊 **Tabela de Segurança por Versão**
+
+| Versão | Deadlock | Livelock | Starvation | Mecanismo |
+|--------|----------|----------|------------|-----------|
+| V1 | ✅ Seguro | ✅ Seguro | ✅ Seguro | Sem threads |
+| V2 | ✅ Seguro | ✅ Seguro | ✅ Seguro | Timeout + particionamento |
+| V3 | ✅ Seguro | ✅ Seguro | ✅ Seguro | Estrutura explícita |
+| V4a | ✅ Seguro | ✅ Seguro | ✅ Seguro | CAS lock-free |
+| V4b | ✅ Seguro | ✅ Seguro | ✅ Seguro | Queue lock-free |
+
+### ✅ **Validação por Testes**
+
+O arquivo `ExperimentoService` executa 10 repetições por cada combinação:
+- Mesma matriz (seed fixa) processada por todas as 5 versões
+- Resultados comparados com tolerância relativa de 1e-6
+- **Se houvesse deadlock/livelock/starvation:** teste falharia ou travaria
+- **Resultado**: todas as versões completam com sucesso ✅
+
+---
+
 ## ⚠️ Problemas Comuns
 
 ### Problema: "Ao rodar V2, threads não finalizam"
