@@ -1,0 +1,25 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+*.classpath
+*.project
+.settings/
+
+# Build
+target/
+*.jar
+*.war
+*.zip
+
+# Dependencies
+.m2/
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.log
